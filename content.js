@@ -3,10 +3,52 @@
 class ReturnPolicyChecker {
     constructor() {
         this.processedProducts = new Set();
-        this.init();
+        this.isEnabled = true;
+        this.loadSettings().then(() => {
+            if (this.isEnabled) {
+                this.init();
+            }
+        });
+        
+        // Listen for messages from popup
+        chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+            if (request.action === 'toggleExtension') {
+                this.toggleExtension(request.enabled);
+            }
+        });
+    }
+
+    async loadSettings() {
+        try {
+            const result = await chrome.storage.sync.get(['extensionEnabled']);
+            this.isEnabled = result.extensionEnabled !== false; // Default to true
+        } catch (error) {
+            console.log('Could not load settings, defaulting to enabled');
+            this.isEnabled = true;
+        }
+    }
+
+    toggleExtension(enabled) {
+        this.isEnabled = enabled;
+        
+        if (enabled) {
+            // Enable: start checking for products
+            this.processedProducts.clear();
+            this.init();
+        } else {
+            // Disable: remove all badges
+            this.removeAllBadges();
+        }
+    }
+
+    removeAllBadges() {
+        const badges = document.querySelectorAll('.return-policy-badge');
+        badges.forEach(badge => badge.remove());
     }
 
     init() {
+        if (!this.isEnabled) return;
+        
         console.log('Amazon Return Policy Checker initialized');
         this.checkForProducts();
         
@@ -15,6 +57,8 @@ class ReturnPolicyChecker {
     }
 
     checkForProducts() {
+        if (!this.isEnabled) return;
+        
         // Find all product links on the search results page
         const productLinks = document.querySelectorAll('a[href*="/dp/"]');
         
@@ -214,7 +258,11 @@ class ReturnPolicyChecker {
             });
             
             if (shouldCheck) {
-                setTimeout(() => this.checkForProducts(), 1000);
+                setTimeout(() => {
+                    if (this.isEnabled) {
+                        this.checkForProducts();
+                    }
+                }, 1000);
             }
         });
         
